@@ -67,7 +67,8 @@ classdef OptSysArray  < matlab.mixin.Copyable
         Nx_=nan;
         Ny_=nan;
         
-        
+        % Timing property
+        time_ = [];
     end
     
     %% Methods
@@ -103,13 +104,14 @@ classdef OptSysArray  < matlab.mixin.Copyable
                     end
                 end
             end
-            
-            % Set default data type
-            OSA.setdatatype();
-                            
+                                        
             % Check GPUs
             OSA.NGPUs = gpuDeviceCount;
             OSA.initGPU;
+            
+            
+            % Set default data type
+            OSA.setdatatype();
             
         end % of constructor function
         
@@ -240,6 +242,12 @@ classdef OptSysArray  < matlab.mixin.Copyable
             end
         end % of array
         
+        function OSA = starttiming(OSA)
+            % OSA = starttiming(OSA)
+            % Starts a stopwatch
+            OSA.time_ = tic;
+        end % of starttiming
+        
         %% Micellaneous Utilities
             
         function OSA = touch(OSA)
@@ -296,19 +304,31 @@ classdef OptSysArray  < matlab.mixin.Copyable
             switch default_data_type
                 case 'single'
                     OSA.array_ = single(OSA.array_);
+                    OSA.clearGPU;
+                    OSA.send2GPU;
                     
                 case 'double'
                     OSA.array_ = double(OSA.array_);
-                    
+                    OSA.clearGPU;
+                    OSA.send2GPU;
+                                        
                 case 'uint8'
                     OSA.array_ = uint8(OSA.array_);
-                    
+                    OSA.clearGPU;
+                    OSA.send2GPU;
+                                        
                 otherwise
                     error('I do not understand that data type (yet)!');
                     
             end
             
-        end % of datatype
+        end % of setdatatype
+        
+        function t = stoptiming(OSA)
+            % t = stoptiming(OSA)
+            % Returns time since OSA.time_
+            t = toc;
+        end
         
         
             %% GPU Utilities
@@ -330,19 +350,51 @@ classdef OptSysArray  < matlab.mixin.Copyable
             
             OSA.GPU_device = gpuDevice(device_num);
             OSA.useGPU = true;
-        end
+        end % of initGPU
         
-        function a = gather(OSA,~)
+        function OSA = clearGPU(OSA)
+            % OSA = clearGPU(OSA)
+            % Clears GPU properties
+            
+            if OSA.useGPU == true
+                OSA.GPUarray_ = [];
+                OSA.GPUfftarray_ = [];
+            else
+                warning('GPU is not being used/not available!');
+            end
+        end % of clearGPU
+        
+        function OSA = send2GPU(OSA,nuarray)
+            % OSA = send2GPU(OSA,nuarray)
+            % Sends the array_ to GPUarray_ with no argument, sets nuarray
+            % to array_, and then send that to the GPU
+            if OSA.useGPU == true
+                if nargin < 2
+                    OSA.GPUarray_ = OSA.array_;
+                else
+                    OSA.array(nuarray);
+                    OSA.GPUarray_ = OSA.array_;
+                end
+            else
+                warning('GPU is not being used/not available!');
+            end
+        end % of send2GPU
+        
+        function OSA = gather(OSA,~)
             % a = gather(OSA,fftflag)
             % Gathers array from the GPU back to the CPU. If no second
             % argument is given, pull from GPUarray_. If second argument is
             % given, pull from GPUfftarray_. If called by the user, it will
             % probe what is in the arrays. If called by array method,
             % stores gathered matrix into corresponding CPU arrays.
-            if nargin < 1
-                a = gather(OSA.GPUarray_);
+            if OSA.useGPU == true
+                if nargin < 2
+                    OSA.array_ = gather(OSA.GPUarray_);
+                else
+                    OSA.fftarray_ = gather(OSA.GPUfftarray_);
+                end
             else
-                a = gather(OSA.GPUfftarray_);
+                warning('GPU is not being used/not available!');
             end
         end % of gather
         %% Math Operators
