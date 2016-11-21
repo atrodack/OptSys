@@ -8,4 +8,4 @@ close all;
 for n = 1:6
     TestOSArray(n);
 end
-fprintf('*******************\nTesting Complete\n*******************\n');
+fprintf('********************\n  Testing Complete\n********************\n');
