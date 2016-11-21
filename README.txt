@@ -1,3 +1,21 @@
+MATLAB-based Optical System simulation
+
+Most of this code is property of either Alexander T. Rodack, or Johanan L. Codona, Ph.D.
+
+If in doubt about using, ask.
+
+
+
+
+
+
+
+
+
+
+
+
+
 This README is to keep track of ideas, organizational structure, philosophy, etc.
 
 ==================================================
