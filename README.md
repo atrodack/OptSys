@@ -8,23 +8,16 @@ If in doubt about using, ask.
 
 
 
-
-
-
-
-
-
-
-
-This README is to keep track of ideas, organizational structure, philosophy, etc.
-
 ==================================================
                     GOALS
 ==================================================
 
 1) Store an Optical System of Arbitrary Complexity
+
 2) Use Fresnel Propagation for Diffraction Analysis
+
 3) Design Optical Elements
+
 4) Polarization?
 
 
@@ -33,6 +26,7 @@ This README is to keep track of ideas, organizational structure, philosophy, etc
 =================================================
 
 1) Draws from the ideas/methods of AOSim2 by JLCodona
+
 2) Draws from the ideas/methods of PIAACMCdesign/Cfits by oguyon
 
 
@@ -41,13 +35,18 @@ This README is to keep track of ideas, organizational structure, philosophy, etc
 =================================================
 
 1) Object Oriented
+
 2) Fresnel Propagation
+
 3) Do things on GPU when possible
     a) Efficiency is a must
+    
 4) Write Results to .txt and .fits files
     a) Only display if asked
     b) Create a filesystem
+    
 5) Be capable of controlling hardware?
+
 6) GUI?
 
 =================================================
