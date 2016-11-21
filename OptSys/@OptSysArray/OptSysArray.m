@@ -14,7 +14,9 @@ classdef OptSysArray  < matlab.mixin.Copyable
     % Special Thanks to JLCodona. This will bear resemblance to the AOGrid
     % class within AOSim2.
     
-    
+    % TO DO:
+    % 1) finish basic functionality
+    % 2) make multiple GPUs usable
     %% Properties
     
     % Public Properties
@@ -26,14 +28,6 @@ classdef OptSysArray  < matlab.mixin.Copyable
         FFTsize = [0,0]; % default size of the fftgrid
         Offset = [0 0]; % moves the object.
         verbose = false; % prints info and plots
-        
-        % GPU properties
-        NGPUs = 0; % default to 0, but is initialized in constructor
-        GPU_device; % which GPU is being used
-        useGPU = false; % flag to use a detected GPU or use the CPU
-                        % set to true if GPU is detected, can be turned off
-                        % if desired.
-        
         
         % Miscellaneous Properties
         interpolation_method = []; % selects a method of interpolation
@@ -52,12 +46,19 @@ classdef OptSysArray  < matlab.mixin.Copyable
         GPUarray_;
         GPUfftarray_ = [];
         
+        % GPU properties
+        NGPUs_ = 0; % default to 0, but is initialized in constructor
+        GPU_device_; % which GPU is being used
+        useGPU_ = false; % flag to use a detected GPU or use the CPU
+        % set to true if GPU is detected, can be turned off
+        % if desired.
+        
         % Array element spacing in meters
         spacing_ = [0.01,0.01];
-
+        
         % Default Data type to store in array_
         default_data_type = 'single';
-
+        
         % Coordinate Properties
         origin_ = [0,0]; % real world coordinates of the "center" of the array
         X_ = []; % cached coordinates for X
@@ -66,9 +67,14 @@ classdef OptSysArray  < matlab.mixin.Copyable
         Yextremes = []; % recompute, or if the cache is still vaild
         Nx_=nan;
         Ny_=nan;
+        R_ = [];
+        THETA_ = [];
         
         % Timing property
-        time_ = [];
+        starttime_ = [];
+        stoptime_ = [];
+        exectime_ = [];
+        
     end
     
     %% Methods
@@ -104,28 +110,27 @@ classdef OptSysArray  < matlab.mixin.Copyable
                     end
                 end
             end
-                                        
-            % Check GPUs
-            OSA.NGPUs = gpuDeviceCount;
-            OSA.initGPU;
             
+            % Check GPUs
+            OSA.NGPUs_ = gpuDeviceCount;
+            OSA.initGPU;
             
             % Set default data type
             OSA.setdatatype();
             
         end % of constructor function
         
-                
+        
         %% Read Out Utilities
         function description = describe(OSA)
             % description = describe(OSA)
             % Prints a summary of the important object parameters
             % name, class, [size of array], [coordinate spacing] data tyep,
             % GPU name, GPU device number
-            if OSA.NGPUs < 1
+            if OSA.NGPUs_ < 1
                 description = sprintf('%s {%s: [%dx%d] [%g,%g] %s}',OSA.name,class(OSA),OSA.nx,OSA.ny,OSA.dx,OSA.dy, OSA.default_data_type);
             else
-                description = sprintf('%s {%s: [%dx%d] [%g,%g] %s} {%s : Device %d} ',OSA.name,class(OSA),OSA.nx,OSA.ny,OSA.dx,OSA.dy,OSA.default_data_type,OSA.GPU_device.Name,OSA.GPU_device.Index);
+                description = sprintf('%s {%s: [%dx%d] [%g,%g] %s} {%s : Device %d} ',OSA.name,class(OSA),OSA.nx,OSA.ny,OSA.dx,OSA.dy,OSA.default_data_type,OSA.GPU_device_.Name,OSA.GPU_device_.Index);
             end
         end % of describe
         
@@ -151,15 +156,15 @@ classdef OptSysArray  < matlab.mixin.Copyable
             % value = dy(OSA)
             % Returns the spacing between y samples
             value = OSA.spacing_(1);
-        end % of ny
+        end % of dy
         
         function value = dk_(OSA)
             % value = dk_(OSA)
             % Calculates the k spacing
             value = 2*pi./(size(OSA.grid_) .* OSA.spacing_);
         end % of dk
-
-        function sz = size(OSA,dim)  
+        
+        function sz = size(OSA,dim)
             % sz = size(OSA,dim)
             % Returns the size of the data array
             % dim is used to specify which dimmension is desired. Providing
@@ -173,46 +178,26 @@ classdef OptSysArray  < matlab.mixin.Copyable
         
         
         %% Utilitites for Setting Protected Properties
-        
-        function o = origin(OSA,varargin)
-            switch length(varargin)
-                case 0
-                case 1
-                    arg = varargin{1};
-                    if(isscalar(arg))
-                        OSA.origin_ = [1 1]*arg;
-                    else
-                        OSA.origin_ = [arg(1) arg(2)];
-                        OSA.touch;
-                    end
-                    
-                case 2
-                    OSA.origin_ = [varargin{1} varargin{2}];
-                    OSA.touch;
-                    
-                otherwise
-                    error('too many arguments');
-            end
-            
-            o = OSA.origin_;
-        end % of origin
-        
+        % Not inclusive of all protected properties. Many are set in
+        % utilities that are better categorized in other sections
+                
         function OSA = setdefaultdatatype(OSA,datatype)
-           % OSA = setdefaultdatatype(OSA,datatype)
-           % Sets the default_data_type property that is used in the
-           % calling of OSA.array(nuarray). datatype must be one of the
-           % following strings exactly:
-           % 1) 'single'
-           % 2) 'double'
-           
-           OSA.default_data_type = datatype;
-           OSA.setdatatype;
-        
+            % OSA = setdefaultdatatype(OSA,datatype)
+            % Sets the default_data_type property that is used in the
+            % calling of OSA.array(nuarray). datatype must be one of the
+            % following strings exactly:
+            % 1) 'single'
+            % 2) 'double'
+            % 3) 'uint8'
+            
+            OSA.default_data_type = datatype;
+            OSA.setdatatype;
+            
         end % of setdefaultdatatype
         
         
         
-        function a = array(OSA,nuarray,mask) % MAKE GPU FRIENDLY
+        function a = array(OSA,nuarray,mask)
             % a = array(OSA,nuarray,mask)
             % Multi-functional call
             % 1) Calling with no input arguments returns what is in array_
@@ -220,7 +205,7 @@ classdef OptSysArray  < matlab.mixin.Copyable
             
             if nargin == 1
                 a = OSA.array_;
-            else % Set the value to the input
+            else % Set the array_ to the input
                 if nargin == 2
                     nuarray = squeeze(nuarray);
                     nuarray = nuarray(:,:,1);
@@ -228,11 +213,13 @@ classdef OptSysArray  < matlab.mixin.Copyable
                     if numel(OSA) == numel(nuarray)
                         OSA.array_ = nuarray(:);
                         OSA.setdatatype();
+                        %OSA.send2GPU;
                         OSA.touch;
                     else
                         OSA.resize(size(nuarray));
                         OSA.array_ = nuarray;
                         OSA.setdatatype();
+                        %OSA.send2GPU;
                         OSA.touch;
                     end
                 else
@@ -242,14 +229,14 @@ classdef OptSysArray  < matlab.mixin.Copyable
             end
         end % of array
         
-        function OSA = starttiming(OSA)
-            % OSA = starttiming(OSA)
-            % Starts a stopwatch
-            OSA.time_ = tic;
-        end % of starttiming
-        
-        %% Micellaneous Utilities
+        function a = GPUarray(OSA,nuarray,mask)
             
+            
+            
+            
+        end % of GPUarray
+        %% Micellaneous Utilities
+        
         function OSA = touch(OSA)
             % OSA = touch(OSA)
             % Clears the fft cache
@@ -268,13 +255,13 @@ classdef OptSysArray  < matlab.mixin.Copyable
             switch length(varargin)
                 case 0
                 case 1
-                    arg = varargin{1};                    
+                    arg = varargin{1};
                     if(isscalar(arg))
                         OSA.array_ = zeros([1 1]*arg);
                     else
                         OSA.array_ = zeros(arg(1:2));
                     end
-                                       
+                    
                 case 2
                     OSA.array_ = zeros([varargin{1} varargin{2}]);
                     
@@ -285,9 +272,9 @@ classdef OptSysArray  < matlab.mixin.Copyable
             newsize = size(OSA);
             OSA.touch;
         end % of resize
-            
         
-        function OSA = setdatatype(OSA,default_data_type) % MAKE GPU FRIENDLY
+        
+        function OSA = setdatatype(OSA,default_data_type)
             % OSA = datatype(default_data_type)
             % sets the datatype to use
             % Currently supported:
@@ -303,43 +290,57 @@ classdef OptSysArray  < matlab.mixin.Copyable
             
             switch default_data_type
                 case 'single'
-                    OSA.array_ = single(OSA.array_);
-                    OSA.clearGPU;
-                    OSA.send2GPU;
+                    if ~isa(OSA.array_,'single')
+                        OSA.array_ = single(OSA.array_);
+                    end
                     
                 case 'double'
-                    OSA.array_ = double(OSA.array_);
-                    OSA.clearGPU;
-                    OSA.send2GPU;
-                                        
+                    if ~isa(OSA.array_,'double')
+                        OSA.array_ = double(OSA.array_);
+                    end
+                    
                 case 'uint8'
-                    OSA.array_ = uint8(OSA.array_);
-                    OSA.clearGPU;
-                    OSA.send2GPU;
-                                        
+                    if ~isa(OSA.array_,'uint8')
+                        OSA.array_ = uint8(OSA.array_);
+                    end
+                    
                 otherwise
                     error('I do not understand that data type (yet)!');
-                    
             end
-            
         end % of setdatatype
+        
+        function t = starttiming(OSA)
+            % OSA = starttiming(OSA)
+            % Starts a stopwatch
+            t = clock;
+            OSA.starttime_ = t;
+        end % of starttiming
         
         function t = stoptiming(OSA)
             % t = stoptiming(OSA)
             % Returns time since OSA.time_
-            t = toc;
+            if isempty(OSA.starttime_)
+                warning('Stopwatch not started');
+                return;
+            end
+            t = clock;
+            OSA.stoptime_ = t;
+            
+            % Compute execution time
+            OSA.exectime_ = etime(OSA.stoptime_,OSA.starttime_);
+            
         end
         
         
-            %% GPU Utilities
+        %% GPU Utilities
         function OSA = initGPU(OSA,device_num)
             % OSA = initGPU(OSA,device_num)
             % Detects if the computer has an CUDA capable GPU, and enables
             % it for usage.
             
-            if OSA.NGPUs < 1
+            if OSA.NGPUs_ < 1
                 warning('Computer does not have NVIDIA CUDA capable GPU! Not Initializing....');
-                OSA.GPU_device = 0;
+                OSA.GPU_device_ = 0;
                 return;
             end
             
@@ -348,15 +349,15 @@ classdef OptSysArray  < matlab.mixin.Copyable
                 device_num = 1;
             end
             
-            OSA.GPU_device = gpuDevice(device_num);
-            OSA.useGPU = true;
+            OSA.GPU_device_ = gpuDevice(device_num);
+            OSA.useGPU_ = true;
         end % of initGPU
         
         function OSA = clearGPU(OSA)
             % OSA = clearGPU(OSA)
             % Clears GPU properties
             
-            if OSA.useGPU == true
+            if OSA.useGPU_ == true
                 OSA.GPUarray_ = [];
                 OSA.GPUfftarray_ = [];
             else
@@ -368,35 +369,72 @@ classdef OptSysArray  < matlab.mixin.Copyable
             % OSA = send2GPU(OSA,nuarray)
             % Sends the array_ to GPUarray_ with no argument, sets nuarray
             % to array_, and then send that to the GPU
-            if OSA.useGPU == true
+            if OSA.useGPU_ == true
+                OSA.clearGPU;
                 if nargin < 2
-                    OSA.GPUarray_ = OSA.array_;
+                    OSA.GPUarray_ = gpuArray(OSA.array_);
                 else
                     OSA.array(nuarray);
-                    OSA.GPUarray_ = OSA.array_;
+                    OSA.GPUarray_ = gpuArray(OSA.array_);
                 end
             else
                 warning('GPU is not being used/not available!');
             end
         end % of send2GPU
         
-        function OSA = gather(OSA,~)
+        function OSA = gather(OSA,fftflag)
             % a = gather(OSA,fftflag)
             % Gathers array from the GPU back to the CPU. If no second
             % argument is given, pull from GPUarray_. If second argument is
             % given, pull from GPUfftarray_. If called by the user, it will
             % probe what is in the arrays. If called by array method,
             % stores gathered matrix into corresponding CPU arrays.
-            if OSA.useGPU == true
+            if OSA.useGPU_ == true
                 if nargin < 2
-                    OSA.array_ = gather(OSA.GPUarray_);
+                    OSA.array_ = OSA.array(gather(OSA.GPUarray_));
                 else
-                    OSA.fftarray_ = gather(OSA.GPUfftarray_);
+                    if fftflag == 1
+                        OSA.fftarray_ = gather(OSA.GPUfftarray_);
+                    else
+                        OSA.array_ = gather(OSA.GPUarray_);
+                    end
                 end
             else
                 warning('GPU is not being used/not available!');
             end
         end % of gather
+        
+        function OSA = switchGPU(OSA,device_num)
+            % OSA = switchGPUs(OSA,device_num)
+            % If more than 1 GPU is present, switch which one is being used
+            
+            if(OSA.NGPUs_ > 1)
+                if(device_num <= OSA.NGPUs_)
+                    OSA.GPU_device_ = gpuDevice(device_num);
+                else
+                    warning('GPU:noDevice','No GPU Device %d available',device_num);
+                    OSA.GPU_device_ = gpuDevice(1);
+                    return;
+                end
+            else
+                warning('GPU:noDevice','No GPU Device %d available',device_num);
+                OSA.GPU_device_ = gpuDevice(1);
+                return;
+            end
+        end % of switchGPU
+        
+        function OSA = disableGPU(OSA)
+            % OSA = disableGPU(OSA)
+            % Disables use of GPU
+            OSA.clearGPU;
+            OSA.useGPU_ = false;
+        end % of disableGPU
+        
+        function OSA = enableGPU(OSA)
+            % OSA = enableGPU(OSA)
+            OSA.useGPU_ = true;
+        end % of enableGPU
+        
         %% Math Operators
         
         
@@ -413,7 +451,7 @@ classdef OptSysArray  < matlab.mixin.Copyable
                 [x,y] = coords(OSA);
             end
             
-             % Okay.  Try to not have to compute this.
+            % Okay.  Try to not have to compute this.
             
             % see if anything has changed since the caching...
             if(OSA.Nx_==length(x) && OSA.Ny_==length(y))
@@ -430,7 +468,7 @@ classdef OptSysArray  < matlab.mixin.Copyable
                     % Looks like nothing has changed.  Use the cache!
                     X = OSA.X_;
                     Y = OSA.Y_;
-                    fprintf('<Using COORDS cached values.>\n');
+                    %fprintf('<Using COORDS cached values.>\n');
                     return;
                 else
                     % fprintf('<COORDS Cache failed values test. x(%g %g) y(%g %g)>\n',...
@@ -458,12 +496,50 @@ classdef OptSysArray  < matlab.mixin.Copyable
             
             OSA.Xextremes = x([1 end]);
             OSA.Yextremes = y([1 end]);
-        end
+        end % of COORDS
+        
+        function [THETA,R] = POLARCOORDS(OSA)
+            % [THETA,R] = POLARCOORDS(OSA)
+            % Returns the polar coordinates computed from the cached
+            % Cartesian Coordinates
             
+            % Run COORDS....If it has already been done, just use the
+            % cached coordinate system
+            OSA.COORDS();
+            [THETA,R] = cart2pol(OSA.X_,OSA.Y_);
+            
+            % save to cache
+            OSA.R_ = R;
+            OSA.THETA_ = THETA;
+        end % of POLARCOORDS
         
-        %% Interpolation
         
-                
+        function o = origin(OSA,varargin)
+            switch length(varargin)
+                case 0
+                case 1
+                    arg = varargin{1};
+                    if(isscalar(arg))
+                        OSA.origin_ = [1 1]*arg;
+                    else
+                        OSA.origin_ = [arg(1) arg(2)];
+                        OSA.touch;
+                    end
+                    
+                case 2
+                    OSA.origin_ = [varargin{1} varargin{2}];
+                    OSA.touch;
+                    
+                otherwise
+                    error('too many arguments');
+            end
+            
+            o = OSA.origin_;
+        end % of origin
+        
+    %% Interpolation
+        
+        
     end % of methods
     
     

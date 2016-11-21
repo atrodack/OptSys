@@ -5,6 +5,6 @@ close all;
 
 %% Run Test Cases
 
-for n = 1:5
+for n = 1:6
     TestOSArray(n);
 end

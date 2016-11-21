@@ -2,7 +2,6 @@ function result = TestOSArray(test_case)
 % result = TestOSAClass(test_case)
 % Function to test the functionality of the OptSysArray class as it is
 % contructed. Input "test_case" determines what to test
-% Strncmp calls for my GPU configuration --- needs to be generalized
 
 %% Test OSA class
 switch test_case
@@ -12,44 +11,50 @@ switch test_case
         OSA = OptSysArray(nxy);
         OSA.name = 'Test Case 1';
         result = OSA.describe;
-        test = strncmp('Test Case 1 {OptSysArray: [512x512] [0.01,0.01] single} {GeForce GT 750M : Device 1}',result,length(result)-1);
+        device = gpuDevice(1);
+        teststring = sprintf('Test Case 1 {OptSysArray: [512x512] [0.01,0.01] single} {%s : Device 1}',device.Name);
+        test = strncmp(teststring,result,length(result)-1);
         if test == 1
-            fprintf('Test 1 passed\n');
+            fprintf('Case 1 passed\n');
         else
-            fprintf('Test Case 1 failed\n');
+            fprintf('Case 1 failed\n');
         end
     case 2 %Test Constructor for 2-vector input
         nxy = [512,1024];
         OSA = OptSysArray(nxy);
         OSA.name = 'Test Case 2';
         result = OSA.describe;
-        test = strncmp('Test Case 2 {OptSysArray: [1024x512] [0.01,0.01] single} {GeForce GT 750M : Device 1}',result,length(result)-1);
+        device = gpuDevice(1);
+        teststring = sprintf('Test Case 2 {OptSysArray: [1024x512] [0.01,0.01] single} {%s : Device 1}',device.Name);
+        test = strncmp(teststring,result,length(result)-1);
         if test == 1
-            fprintf('Test 2 passed\n')
+            fprintf('Case 2 passed\n')
         else
-            fprintf('Test Case 2 failed\n');
+            fprintf('Case 2 failed\n');
         end
     case 3 %Test Constructor for OptSysArray input
         OSA = OptSysArray(512);
         OSA.name = 'Test Case 3';
         OSA2 = OptSysArray(OSA);
         result = OSA2.describe;
-        test = strncmp('copy of Test Case 3 {OptSysArray: [512x512] [0.01,0.01] single} {GeForce GT 750M : Device 1}',result,length(result)-1);
+        device = gpuDevice(1);
+        teststring = sprintf('copy of Test Case 3 {OptSysArray: [512x512] [0.01,0.01] single} {%s : Device 1}',device.Name);
+        test = strncmp(teststring,result,length(result)-1);
         if test == 1
-            fprintf('Test 3 passed\n');
+            fprintf('Case 3 passed\n');
         else
-            fprintf('Test Case 2 failed\n');
+            fprintf('Case 2 failed\n');
         end
-    case 4 % Test array()
+    case 4 % Test array() and resize
         a = magic(6);
         OSA = OptSysArray(512);
         OSA.array(a);
         test = isequal(a(:),OSA.array_(:));
         if test == 1
-            fprintf('Test 4 passed\n');
+            fprintf('Case 4 passed\n');
             result = true;
         else
-            fprintf('Test Case 4 failed\n');
+            fprintf('Case 4 failed\n');
             result = false;
         end
     case 5 %Test setdatatype
@@ -64,14 +69,75 @@ switch test_case
             test = isa(OSA.array_,type2);
         end
         if test == 1
-            fprintf('Test 5 passed\n');
+            fprintf('Case 5 passed\n');
             result = true;
         else
-            fprintf('Test Case 5 failed\n');
+            fprintf('Case 5 failed\n');
             result = false;
         end
+    case 6 % Test GPU utilities
+            a = magic(6);
+            OSA = OptSysArray(6);
+            OSA.array(a);
+        if(OSA.NGPUs_ > 0)
+            % test 1: send2GPU
+            % called by array, GPUarray_ should be equal to array_
+            test1 = isequal(OSA.array_,OSA.GPUarray_);
+            if test1 == 0
+                fprintf('send2GPU test failed\n');
+            end
+            
+            % test 2: clearGPU
+            OSA.clearGPU;
+            test2 = isempty(OSA.GPUarray_);
+            if test2 == 0
+                fprintf('clearGPU test failed\n');
+            end
+            
+            % test 3: gather
+            OSA.send2GPU(a);
+            OSA.array(zeros(6));
+            OSA.gather;
+            test3 = isequal(OSA.array_,a);
+            if test3 == 0
+                fprintf('gather test failed\n');
+            end
+            
+            % test 4: switchGPU
+            warning('off','GPU:noDevice')
+            if OSA.NGPUs_ > 1
+                OSA.switchGPU(2);
+                test4 = isequal(OSA.GPU_device_.Index,2);
+                if test4 == 0
+                    fprintf('switchGPU test failed\n');
+                end
+            elseif OSA.NGPUs_ == 1
+                OSA.switchGPU(2); % should throw warning that is suppressed,
+                % and set the device back to 1
+                test4 = isequal(OSA.GPU_device_.Index,1);
+                if test4 == 0
+                    fprintf('switchGPU test failed\n');
+                end
+            else
+                fprintf('Cannot test\n');
+                test4 = 1;
+            end
+            warning('on','GPU:noDevice')
+            
+            test = prod([test1, test2, test3, test4]);
+            if test == 1
+                fprintf('Case 6 passed\n');
+                result = true;
+            else
+                fprintf('Case 6 failed\n');
+                result = false;
+            end
+            
+        else
+            fprintf('Cannot test GPU, no GPU device available\n');
+        end
         
-        
+
 
 end
 
