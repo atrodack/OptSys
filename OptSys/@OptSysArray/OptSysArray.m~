@@ -8,8 +8,8 @@ classdef OptSysArray  < matlab.mixin.Copyable
     % "x" is dim 2
     % "y" is dim 1
     %
-    % Authors: Alexander T. Rodack and Johanan L. Codona
-    % Date: 11/14/2016 - 
+    % Authors: Alexander Rodack and JLCodona
+    % Date: 11/14/2016
     %
     % Special Thanks to JLCodona. This will bear significant resemblance
     % to the AOGrid class within AOSim2: 
@@ -603,7 +603,7 @@ classdef OptSysArray  < matlab.mixin.Copyable
             %                 yn = true;
             %             end
             
-        end % of differ
+        end
         
         function copy = copyobj(obj)
             % Create a shallow copy of the calling object.
@@ -617,7 +617,7 @@ classdef OptSysArray  < matlab.mixin.Copyable
                     fprintf(['\nCould not copy ',pname,' ',this ,'.\n']);
                 end
             end
-        end % of copy
+        end
         
         function org = middlePixel(n)
             % STATIC: org = AOGrid.middlePixel(n)
@@ -627,7 +627,7 @@ classdef OptSysArray  < matlab.mixin.Copyable
                 n = n.size;
             end
             org = (n+2-mod(n,2))/2;
-        end % of middlePixel
+        end
         
     end % of static methods
     
