@@ -5,8 +5,11 @@ function result = TestOSArray(test_case)
 
 %% Test OSA class
 switch test_case
-    % Use Describe to also test initializations
-    case 1 %Test Constructor for single input
+    
+    case 1
+        %% Test Constructor for single input
+        % Use Describe to also test initializations, dx, dy, nx, ny
+        fprintf('**************\n    Case 1 \n');
         nxy = 512;
         OSA = OptSysArray(nxy);
         OSA.name = 'Test Case 1';
@@ -19,7 +22,9 @@ switch test_case
         else
             fprintf('Case 1 failed\n');
         end
-    case 2 %Test Constructor for 2-vector input
+    case 2 
+        %% Test Constructor for 2-vector input
+        fprintf('**************\n    Case 2 \n');
         nxy = [512,1024];
         OSA = OptSysArray(nxy);
         OSA.name = 'Test Case 2';
@@ -32,7 +37,9 @@ switch test_case
         else
             fprintf('Case 2 failed\n');
         end
-    case 3 %Test Constructor for OptSysArray input
+    case 3 
+        %% Test Constructor for OptSysArray input
+        fprintf('**************\n    Case 3 \n');
         OSA = OptSysArray(512);
         OSA.name = 'Test Case 3';
         OSA2 = OptSysArray(OSA);
@@ -45,7 +52,9 @@ switch test_case
         else
             fprintf('Case 2 failed\n');
         end
-    case 4 % Test array() and resize
+    case 4 
+        %% Test array() and resize
+        fprintf('**************\n    Case 4 \n');
         a = magic(6);
         OSA = OptSysArray(512);
         OSA.array(a);
@@ -57,7 +66,9 @@ switch test_case
             fprintf('Case 4 failed\n');
             result = false;
         end
-    case 5 %Test setdatatype
+    case 5 
+        %% Test setdatatype
+        fprintf('**************\n    Case 5 \n');
         a = magic(6);
         if isa(a,'double') == 1
             type1 = 'double';
@@ -75,13 +86,15 @@ switch test_case
             fprintf('Case 5 failed\n');
             result = false;
         end
-    case 6 % Test GPU utilities
+    case 6 
+        %% Test GPU utilities
+        fprintf('**************\n    Case 6 \n');
             a = magic(6);
             OSA = OptSysArray(6);
             OSA.array(a);
         if(OSA.NGPUs_ > 0)
             % test 1: send2GPU
-            % called by array, GPUarray_ should be equal to array_
+            OSA.send2GPU;
             test1 = isequal(OSA.array_,OSA.GPUarray_);
             if test1 == 0
                 fprintf('send2GPU test failed\n');
@@ -95,9 +108,9 @@ switch test_case
             end
             
             % test 3: gather
-            OSA.send2GPU(a);
-            OSA.array(zeros(6));
-            OSA.gather;
+            OSA.send2GPU(a); % last test cleared it, send it back
+            OSA.clearCPU; % clear array_
+            OSA.gather; % write GPU back to CPU
             test3 = isequal(OSA.array_,a);
             if test3 == 0
                 fprintf('gather test failed\n');
@@ -140,7 +153,6 @@ switch test_case
 
 
 end
-
 
 
 

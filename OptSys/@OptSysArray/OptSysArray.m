@@ -84,7 +84,9 @@ classdef OptSysArray  < matlab.mixin.Copyable
             % OSA = OptSysArray(nxy)
             % This is the contructor function for the OptSysArray class. The
             % input argument can be of several types: A scalar value, a
-            % two-vector, or another OptSysArray.
+            % two-vector, or another OptSysArray. Automatically searches
+            % for CUDA enabled GPUs, and initializes them for use if found.
+            
             if nargin == 0
                 OSA.array_ = zeros(OSA.default_array_size);
             else
@@ -118,15 +120,16 @@ classdef OptSysArray  < matlab.mixin.Copyable
             % Set default data type
             OSA.setdatatype();
             
-        end % of constructor function
+        end % of Constructor
         
         
         %% Read Out Utilities
         function description = describe(OSA)
             % description = describe(OSA)
             % Prints a summary of the important object parameters
-            % name, class, [size of array], [coordinate spacing] data tyep,
+            % name, class, [size of array], [coordinate spacing] data type,
             % GPU name, GPU device number
+            
             if OSA.NGPUs_ < 1
                 description = sprintf('%s {%s: [%dx%d] [%g,%g] %s}',OSA.name,class(OSA),OSA.nx,OSA.ny,OSA.dx,OSA.dy, OSA.default_data_type);
             else
@@ -213,13 +216,13 @@ classdef OptSysArray  < matlab.mixin.Copyable
                     if numel(OSA) == numel(nuarray)
                         OSA.array_ = nuarray(:);
                         OSA.setdatatype();
-                        %OSA.send2GPU;
+                        OSA.send2GPU;
                         OSA.touch;
                     else
                         OSA.resize(size(nuarray));
                         OSA.array_ = nuarray;
                         OSA.setdatatype();
-                        %OSA.send2GPU;
+                        OSA.send2GPU;
                         OSA.touch;
                     end
                 else
@@ -229,12 +232,15 @@ classdef OptSysArray  < matlab.mixin.Copyable
             end
         end % of array
         
-        function a = GPUarray(OSA,nuarray,mask)
+        function OSA = clearCPU(OSA)
+            % OSA = clearCPU(OSA)
+            % clears the array_ property. Mostly here for testing GPU
+            % gather method, but it could be useful in other respects
             
-            
-            
-            
-        end % of GPUarray
+            OSA.array_ = [];
+        end % of clearCPU
+        
+        
         %% Micellaneous Utilities
         
         function OSA = touch(OSA)
@@ -339,7 +345,7 @@ classdef OptSysArray  < matlab.mixin.Copyable
             % it for usage.
             
             if OSA.NGPUs_ < 1
-                warning('Computer does not have NVIDIA CUDA capable GPU! Not Initializing....');
+                warning('GPU:noDevice','Computer does not have NVIDIA CUDA capable GPU! Not Initializing....');
                 OSA.GPU_device_ = 0;
                 return;
             end
@@ -391,7 +397,7 @@ classdef OptSysArray  < matlab.mixin.Copyable
             % stores gathered matrix into corresponding CPU arrays.
             if OSA.useGPU_ == true
                 if nargin < 2
-                    OSA.array_ = OSA.array(gather(OSA.GPUarray_));
+                    OSA.array_ = gather(OSA.GPUarray_);
                 else
                     if fftflag == 1
                         OSA.fftarray_ = gather(OSA.GPUfftarray_);
