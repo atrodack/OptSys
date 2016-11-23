@@ -44,11 +44,14 @@ classdef OptSysArray  < matlab.mixin.Copyable
         
         % Storage arrays
         array_;
+        persistedstorage_ = [];
+        GPUarraystorage_ = [1,1,2];
         fftarray_ = [];
         
         % Storage arrays on the GPU
         GPUarray_;
         GPUfftarray_ = [];
+        GPUpersisted_ = [];
         
         % GPU properties
         NGPUs_ = 0; % default to 0, but is initialized in constructor
@@ -117,9 +120,8 @@ classdef OptSysArray  < matlab.mixin.Copyable
                 end
             end
             
-            % Check GPUs
-            OSA.NGPUs_ = gpuDeviceCount;
-            OSA.initGPU;
+            % Initialize GPUs
+            OSA.initGPU(1,2); % give inputs as if 2 GPUs are available, so if 2 are, they are both used. If < 2 are available, the function handles it accordingly
             
             % Set default data type
             OSA.setdatatype();
@@ -136,8 +138,12 @@ classdef OptSysArray  < matlab.mixin.Copyable
             
             if OSA.NGPUs_ < 1
                 description = sprintf('%s {%s: [%dx%d] [%g,%g] %s}',OSA.name,class(OSA),OSA.nx,OSA.ny,OSA.dx,OSA.dy, OSA.default_data_type);
+            elseif OSA.NGPUs_ == 1
+                description = sprintf('%s {%s: [%dx%d] [%g,%g] %s} {%s : Device %d} ',OSA.name,class(OSA),OSA.nx,OSA.ny,OSA.dx,OSA.dy,OSA.default_data_type,OSA.GPU_device_{1}.Name,OSA.GPU_device_{1}.Index);
+            elseif OSA.NGPUs_ == 2
+                description = sprintf('%s {%s: [%dx%d] [%g,%g] %s} {%s : Device %d} {%s : Device %d} ',OSA.name,class(OSA),OSA.nx,OSA.ny,OSA.dx,OSA.dy,OSA.default_data_type,OSA.GPU_device_{1}.Name,OSA.GPU_device_{1}.Index,OSA.GPU_device_{2}.Name,OSA.GPU_device_{2}.Index);
             else
-                description = sprintf('%s {%s: [%dx%d] [%g,%g] %s} {%s : Device %d} ',OSA.name,class(OSA),OSA.nx,OSA.ny,OSA.dx,OSA.dy,OSA.default_data_type,OSA.GPU_device_.Name,OSA.GPU_device_.Index);
+                
             end
         end % of describe
         
@@ -367,31 +373,70 @@ classdef OptSysArray  < matlab.mixin.Copyable
         
         
         %% GPU Utilities
-        function OSA = initGPU(OSA,device_num)
-            % OSA = initGPU(OSA,device_num)
+        function OSA = initGPU(OSA,device_num_calc, device_num_persist)
+            %  OSA = initGPU(OSA,device_num_calc, device_num_persist)
             % Detects if the computer has an CUDA capable GPU, and enables
-            % it for use.
+            % it for use. If more than one GPU is detected, allow for a
+            % second one to be used as well. In this case, the first GPU is
+            % set to be the active one.
             
+            % Count the number of GPUs
+            OSA.NGPUs_ = gpuDeviceCount;
+            
+            % Return if no GPUs are detected
             if OSA.NGPUs_ < 1
                 warning('GPU:noDevice','Computer does not have NVIDIA CUDA capable GPU! Not Initializing....');
                 OSA.GPU_device_ = 0;
                 return;
             end
             
-            % Assume GPU 1 if no device is input
-            if nargin < 2
-                device_num = 1;
+            % Initialize cell array to hold GPU Device Structures
+            OSA.GPU_device_ = cell(1,OSA.NGPUs_);
+            
+            % Initialize the GPUs
+            if OSA.NGPUs_ == 1 % One GPU detected
+                
+                if nargin == 1 % no input, don't use a GPU (user surely knows what they are doing, right?)
+                    OSA.useGPU_ = false;
+                else % use the detected GPU, ignore any 3rd input
+                    device_num_calc = 1; % Don't allow user to supply incorrect input if only 1 GPU is present
+                    OSA.GPU_device_{1} = gpuDevice(device_num_calc);
+                    OSA.useGPU_ = true;
+                end
+                
+            elseif OSA.NGPUs_ > 1 % Multiple GPUs detected
+                
+                if nargin == 1 % don't initialize a GPU
+                    OSA.useGPU_ = false;
+                    
+                elseif nargin == 2 % use 1 GPU
+                    OSA.GPU_device_{1} = gpuDevice(device_num_calc);
+                    OSA.useGPU_ = true;
+                    
+                elseif nargin == 3 % use 2 GPUs
+                    OSA.GPU_device_{1} = gpuDevice(device_num_calc);
+                    OSA.GPU_device_{2} = gpuDevice(device_num_persist);
+                    
+                    gpuDevice(OSA.GPU_device_{1}); % set calc GPU to active
+                    OSA.useGPU_ = [true, true];
+                end
+                
             end
             
-            OSA.GPU_device_ = gpuDevice(device_num);
-            OSA.useGPU_ = true;
         end % of initGPU
         
         function OSA = clearGPU(OSA)
             % OSA = clearGPU(OSA)
-            % Clears GPU properties
+            % Clears calculation GPU properties. Does not clear persistent
+            % GPU.
             
-            if OSA.useGPU_ == true
+            if prod(double(OSA.useGPU_)) == 1
+                % cache current matrices
+                OSA.GPUarraystorage_(:,:,1) = OSA.gather(0);
+                OSA.GPUarraystorage_(:,:,2) = OSA.gather(1);
+                
+                % make sure active GPU is GPU 1
+                
                 OSA.GPUarray_ = [];
                 OSA.GPUfftarray_ = [];
             else
@@ -404,18 +449,49 @@ classdef OptSysArray  < matlab.mixin.Copyable
             % Sends the array_ to GPUarray_ with no argument, sets nuarray
             % to array_, and then send that to the GPU
             
-            if OSA.useGPU_ == true
-                OSA.clearGPU;
-                if nargin < 2
-                    OSA.GPUarray_ = gpuArray(OSA.array_);
-                else
-                    OSA.array(nuarray);
-                    OSA.GPUarray_ = gpuArray(OSA.array_);
+            if prod(double(OSA.useGPU_)) == 1
+                if OSA.NGPUs_ < 2
+                    
+                    % check that GPU 1 is active
+                    if gpuDevice ~= 1
+                        gpuDevice(OSA.GPU_device_{1});
+                        % NOTE: If this is done, even if device 1 was
+                        % already active, it resets all the gpuArrays.
+                        % clearGPU() is called after this step anyway, so
+                        % it shouldn't matter here.
+                    end
+                    
+                    OSA.clearGPU;
+                    if nargin < 2
+                        OSA.GPUarray_ = gpuArray(OSA.array_);
+                    else
+                        OSA.array(nuarray);
+                        OSA.GPUarray_ = gpuArray(OSA.array_);
+                    end
+                elseif OSA.NGPUs_ >= 2
+                    
+                    
+                    
                 end
             else
                 warning('GPU is not being used/not available!');
             end
         end % of send2GPU
+        
+        function OSA = send2persistentGPU(OSA,M)
+            % OSA = send2persistentGPU(OSA,M)
+            % Sends a Matrix M to the GPU Device being used for
+            % persistence.
+            
+            if prod(double(OSA.useGPU_)) == 1
+                % set active GPU to persisted if necessary
+                
+                
+                
+                OSA.persistedstorage_ = M;
+                OSA.GPUpersisted_ = gpuArray(OSA.persistedstorage_);
+            end
+        end % of send2persistentGPU
         
         function OSA = gather(OSA,fftflag)
             % a = gather(OSA,fftflag)
@@ -425,7 +501,7 @@ classdef OptSysArray  < matlab.mixin.Copyable
             % probe what is in the arrays. If called by array method,
             % stores gathered matrix into corresponding CPU arrays.
             
-            if OSA.useGPU_ == true
+            if prod(double(OSA.useGPU_)) == 1
                 if nargin < 2
                     OSA.array_ = gather(OSA.GPUarray_);
                 else
